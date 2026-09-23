@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Bounds } from './layout';
 
 /** Uses the *same camera and matrix* as the existing physical shadow. */
 export function syncProjectionCamera(light: THREE.SpotLight) {
@@ -34,6 +35,8 @@ const fragmentShader = /* glsl */`
   uniform vec3 sourceDirection;
   uniform float coneCos;
   uniform float penumbraCos;
+  uniform float clipProjection;
+  uniform vec4 projectionBounds;
   varying vec4 vProjected;
   varying vec3 vWorldPosition;
 
@@ -65,6 +68,7 @@ const fragmentShader = /* glsl */`
   }
   void main() {
     if (reveal <= 0.0001 || hasShadowMap < 0.5 || vProjected.w <= 0.0) discard;
+    if (clipProjection > 0.5 && (vWorldPosition.x < projectionBounds.x || vWorldPosition.x > projectionBounds.y || vWorldPosition.y < projectionBounds.z || vWorldPosition.y > projectionBounds.w)) discard;
     vec3 p = vProjected.xyz / vProjected.w;
     if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z < 0.0 || p.z > 1.0) discard;
     float cone = smoothstep(coneCos, penumbraCos,
@@ -117,6 +121,7 @@ export class SkeletonProjection {
         shadowRadius: {value: 0}, shadowTexel: {value: new THREE.Vector2(1/2048,1/2048)},
         sourcePosition: {value: new THREE.Vector3()}, sourceDirection: {value: new THREE.Vector3()},
         coneCos: {value: 0}, penumbraCos: {value: 0},
+        clipProjection: {value: 0}, projectionBounds: {value: new THREE.Vector4()},
       },
     });
     this.overlay = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.68), material);
@@ -131,6 +136,11 @@ export class SkeletonProjection {
   }
 
   invalidate() { this.pending = true; }
+
+  setProjectionBounds(bounds:Bounds,enabled:boolean){
+    this.overlay.material.uniforms.clipProjection.value=enabled?1:0;
+    this.overlay.material.uniforms.projectionBounds.value.set(bounds.minX,bounds.maxX,bounds.minY,bounds.maxY);
+  }
 
   update(renderer: THREE.WebGLRenderer, wall: THREE.Mesh, opacity: number, brightness: number) {
     const {light, overlay} = this;
